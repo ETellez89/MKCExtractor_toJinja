@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/png" sizes="32x32" href="https://cdn-icons-png.flaticon.com/512/732/732210.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>From MKC to Bloomreach</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+
+    <style>
+        body {
+            background-color: #f3f4f6;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        .editor {
+            background-color: #282c34;
+            color: #abb2bf;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            padding: 20px;
+            height: 100%;
+            overflow: auto;
+            outline: none;
+            border-radius: 0 0 8px 0;
+            white-space: pre;
+        }
+
+        .editor:focus-within {
+            box-shadow: inset 0 0 0 2px #4a5568;
+        }
+
+        .editor::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        .editor::-webkit-scrollbar-track {
+            background: #21252b;
+        }
+
+        .editor::-webkit-scrollbar-thumb {
+            background: #4b5362;
+            border-radius: 5px;
+        }
+
+        .editor::-webkit-scrollbar-thumb:hover {
+            background: #677185;
+        }
+
+        .copy-badge {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            z-index: 20;
+            opacity: 0.8;
+        }
+
+        .copy-badge:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <div class="mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">MKC Extractor & Jinja Editor 🧰</h1>
+            <p class="text-gray-500 text-sm">Paste the MKC HTML to transform it to Jinja code</p>
+        </div>
+
+        <!-- INPUT -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-8">
+            <textarea id="inputHtml"
+                class="w-full h-32 p-4 border border-gray-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-none transition"
+                placeholder="Paste here the whole HTML Code (<!DOCTYPE html>...)"></textarea>
+            <div class="mt-3 text-right">
+                <button id="btnProcess"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-8 rounded-lg shadow transition-all transform hover:scale-105">
+                    Generate Blocks
+                </button>
+            </div>
+        </div>
+
+        <!-- OUTPUT GRID -->
+        <div id="outputContainer" class="flex flex-col gap-8">
+            <div class="text-center text-gray-400 py-10 border-2 border-dashed border-gray-300 rounded-lg">
+                Waiting the code...
+            </div>
+        </div>
+    </div>
+
+    <!-- TEMPLATE -->
+    <template id="blockTemplate">
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200 flex flex-col block-card">
+            <!-- Header -->
+            <div class="bg-gray-100 border-b border-gray-200 px-4 py-2 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                    <span class="font-bold text-gray-700 text-sm block-name">Block</span>
+                </div>
+            </div>
+
+            <!-- Contenido dividido -->
+            <div class="flex flex-col md:flex-row h-[500px]">
+                <!-- Panel Izquierdo: Visual -->
+                <div class="w-full md:w-1/2 border-r border-gray-200 relative bg-white flex flex-col">
+                    <div
+                        class="bg-gray-200 text-gray-600 text-[10px] px-2 py-1 font-bold uppercase tracking-wider text-center">
+                        Preview</div>
+                    <iframe class="preview-frame w-full h-full border-none flex-grow"
+                        sandbox="allow-same-origin"></iframe>
+                </div>
+
+                <!-- Panel Derecho: EDITOR DE CÓDIGO -->
+                <div class="w-full md:w-1/2 relative flex flex-col bg-[#282c34]">
+                    <div
+                        class="bg-[#21252b] text-gray-400 text-[10px] px-2 py-1 font-bold uppercase tracking-wider text-center flex justify-between items-center">
+                        <span>Code Editor (Jinja)</span>
+                        <span class="text-[9px] text-yellow-500">✎ You can edit</span>
+                    </div>
+
+                    <button
+                        class="copy-badge bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded shadow flex items-center gap-1 transition btn-copy">
+                        Copy
+                    </button>
+
+                    <!-- Este DIV será nuestro editor mágico -->
+                    <div class="editor language-html"></div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script type="module">
+        import { CodeJar } from 'https://cdn.jsdelivr.net/npm/codejar@3.7.0/codejar.js';
+
+        const highlight = (editor) => {
+            hljs.highlightElement(editor);
+        };
+
+        window.processHtml = function () {
+            const input = document.getElementById('inputHtml').value;
+            const container = document.getElementById('outputContainer');
+
+            if (!input.trim()) return alert("Please paste the HTML Code");
+
+            container.innerHTML = '';
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(input, 'text/html');
+
+            let globalStyles = '';
+            doc.querySelectorAll('style').forEach(s => globalStyles += s.outerHTML);
+
+            const allCandidates = Array.from(doc.querySelectorAll('.stylingblock-content-wrapper'));
+            let validBlocks = [];
+
+            if (allCandidates.length > 0) {
+                validBlocks = allCandidates.filter(element => {
+                    let parent = element.parentElement;
+                    while (parent) {
+                        if (parent.classList && parent.classList.contains('stylingblock-content-wrapper')) {
+                            return false;
+                        }
+                        parent = parent.parentElement;
+                    }
+                    return true;
+                });
+            } else {
+                validBlocks = Array.from(doc.querySelectorAll('body > table'));
+                if (validBlocks.length === 0) validBlocks = [doc.body];
+            }
+
+            validBlocks.forEach((block, index) => {
+                const originalHtml = block.outerHTML;
+                const jinjaCode = convertAmpscriptToJinja(originalHtml);
+                const prettyCode = formatHTML(jinjaCode);
+
+                createCard(index + 1, originalHtml, prettyCode, globalStyles);
+            });
+        };
+
+        // Asignar evento al botón
+        document.getElementById('btnProcess').addEventListener('click', window.processHtml);
+
+        function createCard(id, htmlPreview, initialCode, styles) {
+            const template = document.getElementById('blockTemplate');
+            const clone = template.content.cloneNode(true);
+
+            clone.querySelector('.block-name').textContent = `Estructura #${id}`;
+
+            const editorElement = clone.querySelector('.editor');
+
+            const jar = CodeJar(editorElement, highlight);
+
+            jar.updateCode(initialCode);
+
+            const btnCopy = clone.querySelector('.btn-copy');
+            btnCopy.onclick = () => {
+                const currentCode = jar.toString();
+
+                navigator.clipboard.writeText(currentCode);
+                btnCopy.textContent = '¡Copiado!';
+                btnCopy.classList.replace('bg-blue-600', 'bg-green-600');
+                setTimeout(() => {
+                    btnCopy.textContent = 'Copiar';
+                    btnCopy.classList.replace('bg-green-600', 'bg-blue-600');
+                }, 2000);
+            };
+
+            const iframe = clone.querySelector('.preview-frame');
+            document.getElementById('outputContainer').appendChild(clone);
+
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write(`
+                <html><head>${styles}</head>
+                <body style="margin:0;padding:10px;background:white;display:flex;justify-content:center;">
+                    <div style="width:600px;max-width:100%;">
+                        ${htmlPreview}
+                    </div>
+                </body></html>
+            `);
+            doc.close();
+        }
+
+        function convertAmpscriptToJinja(text) {
+            text = text.replace(/%%=v\(@(\w+)\)=%%/gi, '{{ customer.$1 }}');
+            text = text.replace(/%%=RedirectTo\(v\(@(\w+)\)\)=%%/gi, '{{ customer.$1 }}');
+            text = text.replace(/%%\[\s*if\s+(.*?)\s+then\s*\]%%/gi, (m, c) => `{% if customer.${c.replace(/@/g, 'customer.').trim()} %}`);
+            text = text.replace(/%%\[\s*elseif\s+(.*?)\s+then\s*\]%%/gi, (m, c) => `{% elif customer.${c.replace(/@/g, 'customer.').trim()} %}`);
+            text = text.replace(/%%\[\s*else\s*\]%%/gi, '{% else %}');
+            text = text.replace(/%%\[\s*endif\s*\]%%/gi, '{% endif %}');
+            text = text.replace(/contenteditable="true"/gi, '');
+            return text;
+        }
+
+        function formatHTML(html) {
+            let tab = '  ';
+            let result = '';
+            let indent = '';
+            html.split(/>\s*</).forEach(function (element) {
+                if (element.match(/^\/\w/)) {
+                    indent = indent.substring(tab.length);
+                }
+                result += indent + '<' + element + '>\r\n';
+                if (element.match(/^<?\w[^>]*[^\/]$/) && !element.startsWith("input") && !element.startsWith("img") && !element.startsWith("br")) {
+                    indent += tab;
+                }
+            });
+            return result.substring(1, result.length - 3);
+        }
+    </script>
+</body>
+
+</html>
